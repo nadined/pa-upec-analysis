@@ -126,15 +126,54 @@ $(OUTPUT_DIR)/%_Assembly/Annotation: \
 		$(OUTPUT_DIR)/%_Assembly/contigs.fa
 	prokka --outdir $@ $<
 #mlst with srst2
-$(OUTPUT_DIR)%_Assembly/MLST:\
+$(OUTPUT_DIR)/%_Assembly/MLST:\
 		$(RAW_DATA_DIR)/%_R1.fastq.gz \
                 $(RAW_DATA_DIR)/%_R2.fastq.gz
-	python $(GETMLST) --species "Escherichia coli\#1" \	
-		&& python $(SRST) --output $@ --input_pe $< $(word 2, $^) --mlst_db Escherichia_coli^#1.fasta --mlst_definitions ecoli.txt --mlst_delimiter '-'
+	python $(GETMLST) --species "Escherichia coli#1" && python $(SRST2) --output $@ --input_pe $< $(word 2, $^) --forward _R1 --reverse _R2 --mlst_db Escherichia_coli#1.fasta --mlst_definitions ecoli.txt --mlst_delimiter '-'
 
-all: $(ANNOTATE)
 
-test: $(OUTPUT_DIR)/PA5B_Assembly/MLST
+#find SNPs with kSNP3.0
+
+#first use MakeFasta to combine genomes into single fasta
+$(OUTPUT_DIR)/SNPs/combined_assemblies.fa:\
+		$(OUTPUT_DIR)/SNPs/genomeslist
+	MakeFasta $< $@ 
+
+#use Kchooser to determine optimum k
+$(OUTPUT_DIR)/SNPs/Kchooser.report:\
+		$(OUTPUT_DIR)/SNPs/combined_assemblies.fa
+	Kchooser $< $@
+
+#run kSNP3
+$(OUTPUT_DIR)/SNPs/testrun:\
+		$(OUTPUT_DIR)/SNPs/genomeslist \
+		$(OUTPUT_DIR)/SNPs/genomenames
+	kSNP3 -in $< -k 19 -outdir $@ -annotate $(word 2, $^)
+
+#find virulence genes with SeqFindr
+$(OUTPUT_DIR)/virulence/VFDB_results:\
+		$(OUTPUT_DIR)/virulence/Schembri_VFDB.fa \
+		$(OUTPUT_DIR)/assemblies
+	SeqFindr $<  $(word 2, $^)  -o $@ -l
+
+$(OUTPUT_DIR)/virulence/plasmids_results:\
+		$(OUTPUT_DIR)/virulence/plasmid_replicons.fa \
+                $(OUTPUT_DIR)/assemblies	
+	SeqFindr $<  $(word 2, $^) -o $@ -l
+
+$(OUTPUT_DIR)/virulence/Islands_200_results: \
+		$(OUTPUT_DIR)/virulence/Islands_200bp_chunks.fa \
+		$(OUTPUT_DIR)/assemblies
+	SeqFindr $< $(word 2, $^) -o $@ -l
+
+$(OUTPUT_DIR)/virulence/Islands_500_results: \
+                $(OUTPUT_DIR)/virulence/Islands_500bp_chunks.fa \
+                $(OUTPUT_DIR)/assemblies
+	SeqFindr $< $(word 2, $^) -o $@ -l
+
+all: $(MLST)
+
+test: $(OUTPUT_DIR)/SNPs/Kchooser.report
 
 .INTERMEDIATE: \
 	$(OUTPUT_DIR)/*_Assembly/contigs.fa.amb \
@@ -145,4 +184,4 @@ test: $(OUTPUT_DIR)/PA5B_Assembly/MLST
 clean:
 	rm -rf $(SPECIFIED_ASSEMBLIES)
 	rm -rf $(OPTIMISED_ASSEMBLIES)
-	rm -f *Logfile.txt
+	rm -f *Logfile.txti
